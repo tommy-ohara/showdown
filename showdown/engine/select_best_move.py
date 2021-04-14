@@ -53,6 +53,14 @@ def pick_safest(score_lookup):
     safest = max(worst_case, key=lambda x: worst_case[x][1])
     return worst_case[safest]
 
+def pick_opponent_safest(score_lookup):
+    worst_case = defaultdict(lambda: (tuple(), float('-inf')))
+    for move_pair, result in score_lookup.items():
+        if worst_case[move_pair[0]][1] < result:
+            worst_case[move_pair[0]] = move_pair, result
+
+    safest = min(worst_case, key=lambda x: worst_case[x][1])
+    return worst_case[safest]
 
 def move_item_to_front_of_list(l, item):
     all_indicies = list(range(len(l)))
@@ -129,6 +137,78 @@ def get_payoff_matrix(mutator, user_options, opponent_options, depth=2, prune=Tr
                 opponent_options = move_item_to_front_of_list(opponent_options, opponent_move)
 
         if worst_score_for_this_row > best_score:
+            best_score = worst_score_for_this_row
+
+    return state_scores
+
+def get_opponent_payoff_matrix(mutator, user_options, opponent_options, depth=2, prune=True):
+    """
+    :param mutator: a StateMutator object representing the state of the battle
+    :param user_options: options for the bot
+    :param opponent_options: options for the opponent
+    :param depth: the remaining depth before the state is evaluated
+    :param prune: specify whether or not to prune the tree
+    :return: a dictionary representing the potential move combinations and their associated scores
+    """
+
+    winner = mutator.state.battle_is_finished()
+    if winner == -1:
+        return {(constants.DO_NOTHING_MOVE, constants.DO_NOTHING_MOVE): evaluate(mutator.state) + WON_BATTLE*depth*winner}
+
+    depth -= 1
+
+    # if the battle is not over, but the opponent has no moves - we want to return the user options as moves
+    # this is a special case in a random battle where the opponent's pokemon has fainted, but the opponent still
+    # has reserves left that are unseen
+    if user_options == [constants.DO_NOTHING_MOVE] and mutator.state.self.active.hp == 0:
+        return {(constants.DO_NOTHING_MOVE, opponent_option): evaluate(mutator.state) for opponent_option in opponent_options}
+
+    state_scores = dict()
+
+    best_score = float('-inf')
+    for i, opponent_move in enumerate(opponent_options):
+        worst_score_for_this_row = float('inf')
+        
+        skip = False
+
+        # user_options can change during the loop
+        # using user_options[:] makes a copy when iterating to ensure no funny-business
+        for j, user_option in enumerate(user_options[:]):
+            if skip:
+                state_scores[(opponent_move, user_move)] = float('nan')
+                continue
+
+            score = 0
+            state_instructions = get_all_state_instructions(mutator, user_move, opponent_move)
+            if depth == 0:
+                for instructions in state_instructions:
+                    mutator.apply(instructions.instructions)
+                    t_score = evaluate(mutator.state)
+                    score += (t_score * instructions.percentage)
+                    mutator.reverse(instructions.instructions)
+
+            else:
+                for instructions in state_instructions:
+                    this_percentage = instructions.percentage
+                    mutator.apply(instructions.instructions)
+                    next_turn_user_options, next_turn_opponent_options = mutator.state.get_all_options()
+                    safest = pick_opponent_safest(get_opponent_payoff_matrix(mutator, next_turn_user_options, next_turn_opponent_options, depth=depth, prune=prune))
+                    score += safest[1] * this_percentage
+                    mutator.reverse(instructions.instructions)
+
+            state_scores[(opponent_move, user_move)] = score
+
+            if score > worst_score_for_this_row:
+                worst_score_for_this_row = score
+
+            if prune and score > best_score:
+                skip = True
+
+                # MOST of the time in pokemon, an opponent's move that causes a prune will cause a prune elsewhere
+                # move this item to the front of the list to prune faster
+                user_options = move_item_to_front_of_list(user_options, user_move)
+
+        if worst_score_for_this_row < best_score:
             best_score = worst_score_for_this_row
 
     return state_scores
