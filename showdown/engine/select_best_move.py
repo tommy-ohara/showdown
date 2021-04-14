@@ -173,7 +173,7 @@ def get_opponent_payoff_matrix(mutator, user_options, opponent_options, depth=2,
 
         # user_options can change during the loop
         # using user_options[:] makes a copy when iterating to ensure no funny-business
-        for j, user_option in enumerate(user_options[:]):
+        for j, user_move in enumerate(user_options[:]):
             if skip:
                 state_scores[(opponent_move, user_move)] = float('nan')
                 continue

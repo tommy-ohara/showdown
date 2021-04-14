@@ -5,6 +5,8 @@ from ..helpers import format_decision
 from showdown.engine.objects import StateMutator
 from showdown.engine.select_best_move import pick_safest
 from showdown.engine.select_best_move import get_payoff_matrix
+from showdown.engine.select_best_move import pick_opponent_safest
+from showdown.engine.select_best_move import get_opponent_payoff_matrix
 
 import config
 
@@ -78,8 +80,8 @@ class BattleBot(Battle):
     def find_best_move(self):
         battles = self.prepare_battles(join_moves_together=True)
         safest_move = pick_safest_move_from_battles(battles, list(), lookup_depth=config.search_depth)
-        safest_move_list = list().append(safest_move)
+        safest_move_list = [safest_move]
         opponent_move = pick_opponent_safest_move_from_battles(battles, safest_move_list)
-        opponent_move_list = list().append(opponent_move)
+        opponent_move_list = [opponent_move]
         most_punishing_move = pick_safest_move_from_battles(battles, opponent_move_list, lookup_depth=config.search_depth)
         return format_decision(self, most_punishing_move)
