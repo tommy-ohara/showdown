@@ -53,6 +53,7 @@ def pick_safest(score_lookup):
     safest = max(worst_case, key=lambda x: worst_case[x][1])
     return worst_case[safest]
 
+# Altered pick safest to be from the opponent's perspective
 def pick_opponent_safest(score_lookup):
     worst_case = defaultdict(lambda: (tuple(), float('-inf')))
     for move_pair, result in score_lookup.items():
@@ -141,6 +142,7 @@ def get_payoff_matrix(mutator, user_options, opponent_options, depth=2, prune=Tr
 
     return state_scores
 
+# Altered version of payoff matrix getter that generates one from the opponent's perspective
 def get_opponent_payoff_matrix(mutator, user_options, opponent_options, depth=2, prune=True):
     """
     :param mutator: a StateMutator object representing the state of the battle

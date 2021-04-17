@@ -23,7 +23,7 @@ def prefix_opponent_move(score_lookup, prefix):
 
     return new_score_lookup
 
-
+# Pick safest move from battles that takes a list of moves for the user instead of generating it if given one
 def pick_safest_move_from_battles(battles, possible_moves, lookup_depth=1):
     all_scores = dict()
     for i, b in enumerate(battles):
@@ -43,6 +43,7 @@ def pick_safest_move_from_battles(battles, possible_moves, lookup_depth=1):
     logger.debug("Safest: {}, {}".format(bot_choice, payoff))
     return bot_choice
 
+# Altered the logic of prefix opponent move to prefix user move for picking opponent's safest move
 def prefix_user_move(score_lookup, prefix):
     new_score_lookup = dict()
     for k, v in score_lookup.items():
@@ -52,6 +53,7 @@ def prefix_user_move(score_lookup, prefix):
 
     return new_score_lookup
 
+# Altered the logic of the pick safest moves from battles method for determining the opponent's safest move
 def pick_opponent_safest_move_from_battles(battles, player_safest_move=None, lookup_depth=1):
     all_scores = dict()
     for i, b in enumerate(battles):
