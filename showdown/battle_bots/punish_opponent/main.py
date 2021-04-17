@@ -52,12 +52,14 @@ def prefix_user_move(score_lookup, prefix):
 
     return new_score_lookup
 
-def pick_opponent_safest_move_from_battles(battles, player_safest_move, lookup_depth=1):
+def pick_opponent_safest_move_from_battles(battles, player_safest_move=None, lookup_depth=1):
     all_scores = dict()
     for i, b in enumerate(battles):
         state = b.create_state()
         mutator = StateMutator(state)
         user_options, opponent_options = b.get_all_options()
+        if player_safest_move == None:
+            player_safest_move = user_options
         logger.debug("Searching through the state for opponent safest move: {}".format(mutator.state))
         scores = get_opponent_payoff_matrix(mutator, player_safest_move, opponent_options, depth=lookup_depth, prune=True)
 

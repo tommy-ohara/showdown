@@ -2,6 +2,7 @@ from showdown.battle import Battle
 
 from ..helpers import format_decision
 
+from data import all_move_json
 from showdown.engine.objects import StateMutator
 from showdown.engine.select_best_move import pick_safest
 from showdown.engine.select_best_move import get_payoff_matrix
@@ -10,6 +11,8 @@ from showdown.engine.select_best_move import get_opponent_payoff_matrix
 from showdown.engine.helpers import normalize_name
 from showdown.battle_bots.safest import prefix_opponent_move
 from showdown.battle_bots.safest import pick_safest_move_from_battles
+from showdown.battle_bots.punish_opponent import prefix_user_move
+from showdown.battle_bots.punish_opponent import pick_opponent_safest_move_from_battles
 
 import config
 import constants
@@ -18,11 +21,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 LANDORUS_THERIAN = "landorustherian"
-MAGEARNA = "magearna"
+MAGNEZONE = "magnezone"
 TAPU_KOKO = "tapukoko"
 HAWLUCHA = "hawlucha"
 DRAGAPULT = "dragapult"
 KARTANA = "kartana"
+
+ELECTRIC_IMMUNE = ["lightningrod", "voltabsorb", "motordrive"]
+DANGEROUS_STATUS_MOVES = ["willowisp", "thunderwave", "spore", "haze", "roar", "whirlwind"]
 
 # Perform logic for a specific Hyper Offense team where logic is determined by the current active Pokemon
 # With more time I would create a way for the AI to determine the role of each Pokemon in the
@@ -60,20 +66,22 @@ class BattleBot(Battle):
         # Logic for volt switch killing / double KO
         # Logic for volt switch happening first
         # Logic for volt switch happening second / bot Pokemon gets KOd
+        # Temp pick safest for general testing, maybe keep it if it works well
+        switch = self.pick_safest_move()
 
         return switch
 
     def decide_based_on_active(self, state, bot_options, bot_moves, bot_switches, opponent_options):
         decision = bot_options[0]
-        if (self.user.active.name == LANDORUS_THERIAN):
+        if self.user.active.name == LANDORUS_THERIAN:
             decision = self.landorus_therian_logic(state, bot_options, bot_moves, bot_switches, opponent_options)
-        elif (self.user.active.name == MAGEARNA):
-            decision = self.magearna_logic(state, bot_options, bot_moves, bot_switches, opponent_options)
-        elif (self.user.active.name == TAPU_KOKO):
+        elif self.user.active.name == MAGNEZONE:
+            decision = self.magnezone_logic(state, bot_options, bot_moves, bot_switches, opponent_options)
+        elif self.user.active.name == TAPU_KOKO:
             decision = self.tapu_koko_logic(state, bot_options, bot_moves, bot_switches, opponent_options)
-        elif (self.user.active.name == HAWLUCHA):
+        elif self.user.active.name == HAWLUCHA:
             decision = self.hawlucha_logic(state, bot_options, bot_moves, bot_switches, opponent_options)
-        elif (self.user.active.name == DRAGAPULT):
+        elif self.user.active.name == DRAGAPULT:
             decision = self.dragapult_logic(state, bot_options, bot_moves, bot_switches, opponent_options)
         else: # kartana
             decision = self.kartana_logic(state, bot_options, bot_moves, bot_switches, opponent_options)
@@ -84,61 +92,79 @@ class BattleBot(Battle):
     # ensure that when a Pokemon comes in that resists Landorus-Therian's Earthquake and Stone Edge,
     # it will use Explosion to allow another Pokemon to come in safely.
     def landorus_therian_logic(self, state, bot_options, bot_moves, bot_switches, opponent_options):
-        decision = bot_options[0]
-        if (state.opponent.side_conditions[constants.STEALTH_ROCK] == 0) {
+        decision = None
+        if state.opponent.side_conditions[constants.STEALTH_ROCK] == 0 and normalize_name("Stealth Rock") in bot_moves:
             decision = normalize_name("Stealth Rock")
-        } else {
-            most_damage = -1
-            for move in bot_moves:
-                damage_amounts = calculate_damage(state, constants.SELF, move, constants.DO_NOTHING_MOVE)
-
-                damage = damage_amounts[0] if damage_amounts else 0
-
-                if damage > most_damage:
-                    decision = move
-                    most_damage = damage
-        }
+        else:
+            self.pick_most_damaging_move(state, bot_moves)
         return decision
 
     # Mostly used as a damage sponge and pivot, but can be used to poke holes. Prioritize Volt Switch
     # for maintaining momentum.
-    # 1) Opponent can do KO Magearna: safest move
-    # 2) The opponent has a Ground type alive: most damaging move
+    # 1) Opponent can do KO Magnezone: safest move
+    # 2) The opponent has a Ground type/volt absorber alive: most damaging move
     # 3) There is a move that can KO the currently active Pokemon: most damaging move
-    # 4) Magearna currently has a boost: most damaging move
-    # 5) Otherwise: volt switch
+    # 4) Otherwise: volt switch
     # This logic is intended to be greedy in instances where a KO can be scored, and Volt Switch may
     # still be used in case 2 and 3 if it is the only move that can score a KO, for example.
-    def magearna_logic(self, state, bot_options, bot_moves, bot_switches, opponent_options):
-        decision = bot_options[0]
-        if (opponent_can_ko(state, opponent_options)):
-            decision = default_to_safest_move()
-        
+    # It may be worthwhile to add some randomness to the 2nd case, since opponents might predict an
+    # attacking move and go into the Pokemon best suited to tank it instead of predicting volt switch
+    def magnezone_logic(self, state, bot_options, bot_moves, bot_switches, opponent_options):
+        decision = None
+        if self.side_can_ko(state, opponent_options bot_side=False):
+            decision = self.pick_safest_move()
+        elif not safe_volt_switch(state) or side_can_ko(state, bot_options):
+            decision = self.pick_most_damaging_move(state, bot_moves)
+        elif normalize_name("Volt Switch") in bot_moves:
+            decision = normalize_name("Volt Switch")
+        else: # Case where Volt Switch is out of PP and cannot be used (very rare)
+            decision = self.pick_safest_move()
         return decision
 
     # Use the opponent's safest move logic to try to determine if the opponent will switch. 
     # 1) If current Pokemon is Ground type and Tapu can't KO: safest move
     # 2) If they are likely to switch and they have no Ground type: Volt Switch
-    # 3) If they can KO but Tapu can't KO back, safest move
+    # 3) If they can KO but Tapu can't KO faster, safest move
     # 4) Otherwise, most damaging move. 
     # Basically, try to preserve momentum and poke holes when possible
+    # Try using the punish opponent option at first and see how that feels since that logic actually
+    # seems like it would work well for Tapu Koko's goals.
     def tapu_koko_logic(self, state, bot_options, bot_moves, bot_switches, opponent_options):
-        decision = bot_options[0]
+        #decision = None
+        #if self.pokemon_immune_to_electric(state.opponent.active) and not self.side_can_ko(state, bot_options):
+        #    decision = self.pick_safest_move()
+        #elif self.pick_opponent_safest_move().startswith(constants.SWITCH_STRING + " ") 
+        decision = self.pick_punishing_move()
         return decision
 
     # Be greedy. Try to get a Swords Dance off and sweep / poke holes.
-    # 1) If opponent safest option is switch: Swords Dance
-    # 2) If can't KO opponent's active but opponent can KO Hawlucha: safest option
-    # 3) If opponent isn't likely to switch but can't KO: Swords Dance
+    # 1) If opponent safest move is Status move: Taunt
+    # 2) If no boosts and can safely boost: Swords Dance
+    # 3) If can't KO opponent's active but opponent can KO Hawlucha: safest option
     # 4) Otherwise, most damaging move
     def hawlucha_logic(self, state, bot_options, bot_moves, bot_switches, opponent_options):
-        decision = bot_options[0]
+        decision = None
+        opponent_safest = self.pick_opponent_safest_move()
+        if self.should_taunt(opponent_safest, bot_moves):
+            decision = normalize_name("Taunt")
+        elif self.safe_to_setup(state, opponent_options) and normalize_name("Swords Dance") in bot_moves:
+            decision = normalize_name("Swords Dance")
+        elif self.bot_loses_ko_trade(state, opponent_options, bot_options):
+            decision = self.pick_safest_move()
+        else:
+            decision = self.pick_most_damaging_move(state, bot_moves)
         return decision
 
     # Like Hawlucha, be greedy and try to set up sweeps
-    # Same logic as Hawlucha
+    # Same logic as Hawlucha, except no Taunt case
     def dragapult_logic(self, state, bot_options, bot_moves, bot_switches, opponent_options):
-        decision = bot_options[0]
+        decision = None
+        if self.safe_to_setup(state, opponent_options) and normalize_name("Dragon Dance") in bot_moves:
+            decision = normalize_name("Dragon Dance")
+        elif self.bot_loses_ko_trade(state, opponent_options, bot_options):
+            decision = self.pick_safest_move()
+        else:
+            decision = self.pick_most_damaging_move(state, bot_moves)
         return decision
 
     # Kartana's primary function is revenge killing fast Pokemon that could otherwise sweep the team.
@@ -146,18 +172,89 @@ class BattleBot(Battle):
     # just use the move that will do the most damage to the currently active Pokemon. The only exception
     # is if Kartana can't KO the opponent but the opponent can KO it back, in which case go safest move.
     def kartana_logic(self, state, bot_options, bot_moves, bot_switches, opponent_options):
-        decision = bot_options[0]
+        decision = None
+        if self.bot_loses_ko_trade(state, opponent_options, bot_options):
+            decision = self.pick_safest_move()
+        else:
+            decision = self.pick_most_damaging_move(state, bot_moves)
         return decision
 
-    def opponent_can_ko(self, state, opponent_options):
+    def side_can_ko(self, state, options, bot_side=True):
         can_ko = False
         for option in opponent_options:
             if not option.startswith(constants.SWITCH_STRING + " "):
-                can_ko = calculate_damage(state, constants.OPPONENT, option, constants.DO_NOTHING_MOVE) >= state.user.active.hp
+                if bot_side:
+                    damage_amounts = calculate_damage(state, constants.SELF, option, constants.DO_NOTHING_MOVE) 
+                    damage = damage_amounts[0] if damage_amounts else 0
+                    can_ko = damage >= state.opponent.active.hp
+                else:
+                    damage_amounts = calculate_damage(state, constants.OPPONENT, option, constants.DO_NOTHING_MOVE)
+                    damage = damage_amounts[0] if damage_amounts else 0
+                    can_ko = damage >= state.self.active.hp
                 return can_ko if can_ko
         return can_ko
 
-    def default_to_safest_move(self):
+    def pick_safest_move(self):
         battles = self.prepare_battles(join_moves_together=True)
         safest_move = pick_safest_move_from_battles(battles)
         return safest_move
+
+    def pick_most_damaging_move(self, state, bot_moves):
+        most_damage = -1
+        decision = None
+        for move in bot_moves:
+            damage_amounts = calculate_damage(state, constants.SELF, move, constants.DO_NOTHING_MOVE)
+
+            damage = damage_amounts[0] if damage_amounts else 0
+
+            if damage > most_damage:
+                decision = move
+                most_damage = damage
+        return decision
+    
+    def pick_opponent_safest_move(self):
+        battles = self.prepare_battles(join_moves_together=True)
+        opponent_move = pick_opponent_safest_move_from_battles(battles)
+        return opponent_move
+
+    def pick_punishing_move(self):
+        battles = self.prepare_battles(join_moves_together=True)
+        safest_move = pick_safest_move_from_battles(battles, list(), lookup_depth=config.search_depth)
+        safest_move_list = [safest_move]
+        opponent_move = pick_opponent_safest_move_from_battles(battles, safest_move_list)
+        opponent_move_list = [opponent_move]
+        most_punishing_move = pick_safest_move_from_battles(battles, opponent_move_list, lookup_depth=config.search_depth)
+        return most_punishing_move
+
+    def safe_volt_switch(self, state):
+        safe = True
+        if self.pokemon_immune_to_electric(state.opponent.active):
+            safe = False
+        else:
+            for pkmn in state.opponent.reserve:
+                if pkmn.hp > 0 and pokemon_immune_to_electric(pkmn):
+                    safe = False
+        return safe
+
+    def pokemon_immune_to_electric(self, pkmn):
+        return pkmn.ability in ELECTRIC_IMMUNE or "ground" in pkmn.types
+
+    def should_taunt(self, opponent_safest, bot_moves):
+        return (not opponent_safest.startswith(constants.SWITCH_STRING + " ") 
+        and all_move_json[opponent_safest].get(constants.CATEGORY) == constants.STATUS 
+        and normalize_name("Taunt") in bot_moves)
+    
+    def safe_to_setup(self, state, opponent_options):
+        safe = False
+        opponent_safest = self.pick_opponent_safest_move()
+        if opponent_safest.startswith(constants.SWITCH_STRING + " "):
+            safe = True
+        elif not opponent_safest in DANGEROUS_STATUS_MOVES and not self.side_can_ko(state, opponent_options, bot_side=False):
+            safe = True
+        return safe
+
+    # Bot should play aggresively, so go for the KO even if there's a speed tie
+    def bot_loses_ko_trade(self, state, opponent_options, bot_options):
+        return (self.side_can_ko(state, opponent_options, bot_side=False) 
+        and not self.side_can_ko(state, bot_options)
+        and state.self.active.stats[constants.SPEED] < state.opponent.active.stats[constants.SPEED])
