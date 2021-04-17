@@ -194,7 +194,7 @@ class BattleBot(Battle):
     # is if Kartana can't KO the opponent but the opponent can KO it back, in which case go safest move.
     def kartana_logic(self, state, bot_options, bot_moves, bot_switches, opponent_options):
         decision = None
-        if self.bot_loses_ko_trade(state, bot_options, opponent_options):
+        if self.bot_loses_ko_trade(state, bot_options, opponent_options) or not self.can_2hko(state, bot_moves):
             logger.debug("Cannot KO before opponent can KO. Pick safest move.")
             decision = self.pick_safest_move()
         else:
@@ -300,10 +300,14 @@ class BattleBot(Battle):
 
     # Determine whether the bot's active Pokemon has boosts and can KO the opponent's active in two attacks
     def has_boost_and_can_2hko(self, state, bot_moves):
+        return self.has_offensive_boost(state.self.active) and self.can_2hko(state, bot_moves)
+
+    # Determine if the current Pokemon can 2HKO the opponent
+    def can_2hko(self, state, bot_moves):
         most_damage = self.pick_most_damaging_move(state, bot_moves)
         damage_amounts = calculate_damage(state, constants.SELF, most_damage, constants.DO_NOTHING_MOVE)
         damage = damage_amounts[0] if damage_amounts else 0
-        return self.has_offensive_boost(state.self.active) and damage * 2 >= state.opponent.active.hp
+        return damage * 2 >= state.opponent.active.hp
 
     # Determine if the bot's active Pokemon has boosts in offensive stats
     def has_offensive_boost(self, pkmn):
