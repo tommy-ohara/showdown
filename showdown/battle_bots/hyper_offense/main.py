@@ -164,7 +164,7 @@ class BattleBot(Battle):
         and not self.has_boost_and_can_2hko(state, bot_moves)):
             logger.debug("Safe to set up.")
             decision = normalize_name("Swords Dance")
-        elif self.bot_loses_ko_trade(state, bot_options, opponent_options) or self.bot_loses_matchup(bot_options, opponent_options):
+        elif self.bot_loses_ko_trade(state, bot_options, opponent_options) or self.bot_loses_matchup(state, bot_options, opponent_options):
             logger.debug("Cannot KO before opponent can KO. Pick safest move.")
             decision = self.pick_safest_move()
         else:
@@ -180,7 +180,7 @@ class BattleBot(Battle):
         and not self.has_boost_and_can_2hko(state, bot_moves)):
             logger.debug("Safe to set up.")
             decision = normalize_name("Dragon Dance")
-        elif self.bot_loses_ko_trade(state, bot_options, opponent_options) or self.bot_loses_matchup(bot_options, opponent_options):
+        elif self.bot_loses_ko_trade(state, bot_options, opponent_options) or self.bot_loses_matchup(state, bot_options, opponent_options):
             logger.debug("Cannot KO before opponent can KO. Pick safest move.")
             decision = self.pick_safest_move()
         else:
@@ -295,7 +295,7 @@ class BattleBot(Battle):
         and state.self.active.speed < state.opponent.active.speed)
 
     # Determine whether the bot's active Pokemon would get KO'd and be unable to KO the opponent's active
-    def bot_loses_matchup(self, bot_options, opponent_options):
+    def bot_loses_matchup(self, state, bot_options, opponent_options):
         return self.side_can_ko(state, opponent_options, bot_side=False) and not self.side_can_ko(state, bot_options)
 
     # Determine whether the bot's active Pokemon has boosts and can KO the opponent's active in two attacks
@@ -311,4 +311,4 @@ class BattleBot(Battle):
 
     # Determine if the bot's active Pokemon has boosts in offensive stats
     def has_offensive_boost(self, pkmn):
-        return (pkmn.attack_boost > 0 or pkmn.special_attack_boost > 0
+        return pkmn.attack_boost > 0 or pkmn.special_attack_boost > 0
